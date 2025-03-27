@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Math Agar.io - Números Naturales</title>
+  
+  <!-- KaTeX para operaciones matemáticas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  
+  <style>
+    * {
+      margin: 0; 
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      overflow: hidden;
+      background: #f0f0f0;
+      font-family: 'Arial', sans-serif;
+      cursor: none; /* Se oculta el cursor para personalizarlo, si se desea */
+    }
+    #gameCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #operation-display {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px;
+      border-radius: 10px;
+      z-index: 10;
+      font-size: 1.2em;
+    }
+    #score-display {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px;
+      border-radius: 10px;
+      z-index: 10;
+      font-size: 1.2em;
+    }
+    #game-over {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      padding: 30px;
+      border-radius: 15px;
+      text-align: center;
+      z-index: 999;
+      font-size: 2em;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <div id="operation-display"></div>
+  <div id="score-display">Puntuación: 0</div>
+  <div id="game-over">¡Game Over!<br><span id="final-score"></span></div>
+  
+  <script>
+    // -------------------------------
+    // VARIABLES Y CONSTANTES GLOBALES
+    // -------------------------------
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    // Dimensiones del mundo (tablero grande)
+    const WORLD_WIDTH = 4000;
+    const WORLD_HEIGHT = 4000;
+    const GRID_SIZE = 100; // Tamaño de la cuadricula
+    
+    // Cantidad de bots (enemigos controlados por IA)
+    const BOT_COUNT = 10;
+    // Cantidad de foods (orbes de respuesta)
+    const FOOD_COUNT = 40;
+    
+    // Jugador (bola azul)
+    const player = {
+      x: WORLD_WIDTH / 2,
+      y: WORLD_HEIGHT / 2,
+      radius: 40,
+      vx: 0,
+      vy: 0,
+      friction: 0.9,
+      maxSpeed: 5  // Aumentado para que sea más veloz
+    };
+    
+    // Array de bots (bolitas rojas que se mueven y "compiten")
+    let bots = [];
+    
+    // Array de foods (orbes con posibles respuestas)
+    let foods = [];
+    
+    // Operación actual
+    let currentOperation = null;
+    
+    // Puntuación del jugador
+    let score = 0;
+    
+    // Posición del ratón (para mover al jugador)
+    let mouseX = 0, mouseY = 0;
+    
+    // Control de Game Over
+    let gameOver = false;
+    
+    // -------------------------------
+    // FUNCIONES AUXILIARES
+    // -------------------------------
+    function getRandomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+    
+    // -------------------------------
+    // FUNCIONES PARA OPERACIONES
+    // -------------------------------
+    /**
+     * Genera una operación aritmética con números enteros, usando 2 o 3 operandos.
+     * Se incluyen las operaciones básicas: suma, resta, multiplicación y división exacta.
+     */
+    function generateRandomOperation() {
+      const ops = ['+', '-', '×', '÷'];
+      const op = ops[Math.floor(Math.random() * ops.length)];
+      // Decidir aleatoriamente si la operación será de 2 o 3 números
+      const useThreeNumbers = Math.random() < 0.5;
+      
+      let a, b, c, result;
+      switch (op) {
+        case '+':
+          if (useThreeNumbers) {
+            a = getRandomInt(1, 10);
+            b = getRandomInt(1, 10);
+            c = getRandomInt(1, 10);
+            result = a + b + c;
+            return {
+              text: `${a} + ${b} + ${c} = ?`,
+              correctAnswer: result
+            };
+          } else {
+            a = getRandomInt(1, 10);
+            b = getRandomInt(1, 10);
+            result = a + b;
+            return {
+              text: `${a} + ${b} = ?`,
+              correctAnswer: result
+            };
+          }
+        case '-':
+          if (useThreeNumbers) {
+            // Para evitar resultados negativos, generar b y c pequeños y luego a mayor o igual que b+c.
+            b = getRandomInt(1, 5);
+            c = getRandomInt(1, 5);
+            a = getRandomInt(b + c, b + c + 5);
+            result = a - b - c;
+            return {
+              text: `${a} - ${b} - ${c} = ?`,
+              correctAnswer: result
+            };
+          } else {
+            b = getRandomInt(1, 5);
+            a = getRandomInt(b, b + 5);
+            result = a - b;
+            return {
+              text: `${a} - ${b} = ?`,
+              correctAnswer: result
+            };
+          }
+        case '×':
+          if (useThreeNumbers) {
+            // Para no obtener números muy grandes, usar rango 1-5 para tres números
+            a = getRandomInt(1, 5);
+            b = getRandomInt(1, 5);
+            c = getRandomInt(1, 5);
+            result = a * b * c;
+            return {
+              text: `${a} \\times ${b} \\times ${c} = ?`,
+              correctAnswer: result
+            };
+          } else {
+            a = getRandomInt(1, 10);
+            b = getRandomInt(1, 10);
+            result = a * b;
+            return {
+              text: `${a} \\times ${b} = ?`,
+              correctAnswer: result
+            };
+          }
+        case '÷':
+          if (useThreeNumbers) {
+            // Para división exacta: (a ÷ b) ÷ c = resultado
+            const res = getRandomInt(1, 10);
+            b = getRandomInt(1, 10);
+            c = getRandomInt(1, 10);
+            a = res * b * c;
+            result = res;
+            return {
+              text: `${a} \\div ${b} \\div ${c} = ?`,
+              correctAnswer: result
+            };
+          } else {
+            b = getRandomInt(1, 10);
+            const res = getRandomInt(1, 10);
+            a = b * res;
+            result = res;
+            return {
+              text: `${a} \\div ${b} = ?`,
+              correctAnswer: result
+            };
+          }
+      }
+    }
+    
+    // Genera la operación global y la muestra en pantalla
+    function generateOperation() {
+      currentOperation = generateRandomOperation();
+      katex.render(currentOperation.text, document.getElementById('operation-display'));
+    }
+    
+    // -----------------------------------
+    // FUNCIONES PARA BOLAS DE RESPUESTAS (FOODS)
+    // -----------------------------------
+    /**
+     * Genera FOOD_COUNT orbes de respuesta.
+     * Se asigna el valor correcto a aproximadamente el 30% de ellos.
+     */
+    function spawnFoods() {
+      foods = [];
+      const correctValue = currentOperation.correctAnswer;
+      let correctAssigned = 0;
+      for (let i = 0; i < FOOD_COUNT; i++) {
+        let orb = {
+          x: Math.random() * WORLD_WIDTH,
+          y: Math.random() * WORLD_HEIGHT,
+          radius: 15 + Math.random() * 10,
+          value: 0, // se asignará luego
+          vx: (Math.random() - 0.5) * 2,
+          vy: (Math.random() - 0.5) * 2,
+          color: '#e53935' // rojo
+        };
+        // Aproximadamente el 30% serán correctos
+        if (Math.random() < 0.3) {
+          orb.value = correctValue;
+          correctAssigned++;
+        } else {
+          // Valor incorrecto aleatorio en un rango (evitando el correcto)
+          let wrong = getRandomInt(1, 100);
+          if (wrong === correctValue) {
+            wrong = (wrong + 7) % 100 || 1;
+          }
+          orb.value = wrong;
+        }
+        foods.push(orb);
+      }
+      // Si por azar ninguno fue correcto, se fuerza que al menos uno lo tenga.
+      if (correctAssigned === 0 && foods.length > 0) {
+        foods[0].value = correctValue;
+      }
+    }
+    
+    // -------------------------------
+    // FUNCIONES PARA BOTS (ENEMIGOS)
+    // -------------------------------
+    function spawnBots() {
+      bots = [];
+      for (let i = 0; i < BOT_COUNT; i++) {
+        bots.push({
+          x: Math.random() * WORLD_WIDTH,
+          y: Math.random() * WORLD_HEIGHT,
+          radius: 30 + Math.random() * 20,
+          vx: (Math.random() - 0.5) * 2,
+          vy: (Math.random() - 0.5) * 2,
+          color: '#e53935',
+          speedChangeTimer: 0
+        });
+      }
+    }
+    
+    function updateBots() {
+      bots.forEach(bot => {
+        if (bot.speedChangeTimer <= 0) {
+          bot.vx = (Math.random() - 0.5) * 2;
+          bot.vy = (Math.random() - 0.5) * 2;
+          bot.speedChangeTimer = 100 + Math.random() * 100;
+        } else {
+          bot.speedChangeTimer--;
+        }
+    
+        bot.x += bot.vx;
+        bot.y += bot.vy;
+    
+        // Limitar bots al mundo
+        if (bot.x < bot.radius) { bot.x = bot.radius; bot.vx *= -1; }
+        if (bot.x > WORLD_WIDTH - bot.radius) { bot.x = WORLD_WIDTH - bot.radius; bot.vx *= -1; }
+        if (bot.y < bot.radius) { bot.y = bot.radius; bot.vy *= -1; }
+        if (bot.y > WORLD_HEIGHT - bot.radius) { bot.y = WORLD_HEIGHT - bot.radius; bot.vy *= -1; }
+      });
+    }
+    
+    // --------------------------------
+    // COLISIONES Y COMPORTAMIENTO AGAR.IO
+    // --------------------------------
+    // Revisa colisiones entre un "comedores" (player o bot) y los foods
+    function checkCollisionsWithFoods(eater) {
+      for (let i = foods.length - 1; i >= 0; i--) {
+        const food = foods[i];
+        const dx = food.x - eater.x;
+        const dy = food.y - eater.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+    
+        if (dist < eater.radius + food.radius) {
+          // Si come la respuesta correcta
+          if (food.value === currentOperation.correctAnswer) {
+            eater.radius += 5; // Crece
+            if (eater === player) {
+              score += 10;
+              document.getElementById('score-display').textContent = `Puntuación: ${score}`;
+            }
+            // Al comer una correcta, se regenera la operación y se actualizan los foods
+            generateOperation();
+            spawnFoods();
+            return; 
+          } else {
+            // Si es incorrecta, se penaliza
+            eater.radius = Math.max(10, eater.radius - 5);
+            if (eater === player) {
+              score = Math.max(0, score - 5);
+              document.getElementById('score-display').textContent = `Puntuación: ${score}`;
+            }
+          }
+          // Elimina el food consumido
+          foods.splice(i, 1);
+        }
+      }
+    }
+    
+    // Revisa colisiones entre comedores (jugador y bots)
+    function checkCollisionsAmongEaters() {
+      // Jugador vs Bots
+      for (let i = bots.length - 1; i >= 0; i--) {
+        const bot = bots[i];
+        const dx = bot.x - player.x;
+        const dy = bot.y - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+    
+        if (dist < bot.radius + player.radius) {
+          if (player.radius > bot.radius) {
+            // El jugador "come" al bot y crece (por área)
+            const areaSum = Math.PI * player.radius * player.radius + Math.PI * bot.radius * bot.radius;
+            player.radius = Math.sqrt(areaSum / Math.PI);
+            bots.splice(i, 1);
+            score += 20;
+            document.getElementById('score-display').textContent = `Puntuación: ${score}`;
+          } else {
+            // Si un bot mayor come al jugador, se termina el juego
+            endGame();
+          }
+        }
+      }
+    
+      // Bot vs Bot
+      for (let i = 0; i < bots.length; i++) {
+        for (let j = i + 1; j < bots.length; j++) {
+          const botA = bots[i];
+          const botB = bots[j];
+          const dx = botB.x - botA.x;
+          const dy = botB.y - botA.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+    
+          if (dist < botA.radius + botB.radius) {
+            if (botA.radius > botB.radius) {
+              const areaSum = Math.PI * botA.radius * botA.radius + Math.PI * botB.radius * botB.radius;
+              botA.radius = Math.sqrt(areaSum / Math.PI);
+              bots.splice(j, 1);
+              j--;
+            } else if (botB.radius > botA.radius) {
+              const areaSum = Math.PI * botB.radius * botB.radius + Math.PI * botA.radius * botA.radius;
+              botB.radius = Math.sqrt(areaSum / Math.PI);
+              bots.splice(i, 1);
+              i--;
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    // -------------------------
+    // LÓGICA DEL JUGADOR
+    // -------------------------
+    function updatePlayer() {
+      if (gameOver) return;
+    
+      // Dirección hacia el ratón (centrado en pantalla)
+      const dx = mouseX - canvas.width / 2;
+      const dy = mouseY - canvas.height / 2;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+    
+      if (dist > 0) {
+        player.vx += (dx / dist) * 0.5;
+        player.vy += (dy / dist) * 0.5;
+      }
+    
+      // Aplicar fricción
+      player.vx *= player.friction;
+      player.vy *= player.friction;
+    
+      // Limitar velocidad
+      const speed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+      if (speed > player.maxSpeed) {
+        player.vx = (player.vx / speed) * player.maxSpeed;
+        player.vy = (player.vy / speed) * player.maxSpeed;
+      }
+    
+      // Actualizar posición
+      player.x += player.vx;
+      player.y += player.vy;
+    
+      // Limitar al mundo
+      if (player.x < player.radius) player.x = player.radius;
+      if (player.x > WORLD_WIDTH - player.radius) player.x = WORLD_WIDTH - player.radius;
+      if (player.y < player.radius) player.y = player.radius;
+      if (player.y > WORLD_HEIGHT - player.radius) player.y = WORLD_HEIGHT - player.radius;
+    
+      // Revisar colisiones con foods
+      checkCollisionsWithFoods(player);
+    }
+    
+    // -------------------------
+    // DIBUJADO (RENDER)
+    // -------------------------
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+      // Calcular offset de la cámara (centrado en el jugador)
+      const offsetX = canvas.width / 2 - player.x;
+      const offsetY = canvas.height / 2 - player.y;
+    
+      // Dibujar fondo con cuadricula
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(offsetX, offsetY, WORLD_WIDTH, WORLD_HEIGHT);
+    
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+      // Cuadricula vertical
+      for (let x = 0; x <= WORLD_WIDTH; x += GRID_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(x + offsetX, offsetY);
+        ctx.lineTo(x + offsetX, offsetY + WORLD_HEIGHT);
+        ctx.stroke();
+      }
+      // Cuadricula horizontal
+      for (let y = 0; y <= WORLD_HEIGHT; y += GRID_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(offsetX, y + offsetY);
+        ctx.lineTo(offsetX + WORLD_WIDTH, y + offsetY);
+        ctx.stroke();
+      }
+    
+      // Dibujar borde del mundo
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = '#000';
+      ctx.strokeRect(offsetX, offsetY, WORLD_WIDTH, WORLD_HEIGHT);
+    
+      // Dibujar foods (orbes de respuesta)
+      foods.forEach(food => {
+        ctx.beginPath();
+        ctx.fillStyle = food.color;
+        ctx.arc(food.x + offsetX, food.y + offsetY, food.radius, 0, 2 * Math.PI);
+        ctx.fill();
+    
+        // Texto (valor)
+        ctx.fillStyle = '#fff';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(food.value, food.x + offsetX, food.y + offsetY);
+      });
+    
+      // Dibujar bots
+      bots.forEach(bot => {
+        ctx.beginPath();
+        ctx.fillStyle = bot.color;
+        ctx.arc(bot.x + offsetX, bot.y + offsetY, bot.radius, 0, 2 * Math.PI);
+        ctx.fill();
+      });
+    
+      // Dibujar jugador (bola azul)
+      ctx.beginPath();
+      ctx.fillStyle = '#2196F3';
+      ctx.arc(player.x + offsetX, player.y + offsetY, player.radius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    
+    // -------------------------
+    // BUCLE PRINCIPAL DEL JUEGO
+    // -------------------------
+    function gameLoop() {
+      if (gameOver) return;
+    
+      updatePlayer();
+      updateBots();
+    
+      // Cada bot revisa colisiones con foods
+      bots.forEach(bot => {
+        checkCollisionsWithFoods(bot);
+      });
+    
+      checkCollisionsAmongEaters();
+    
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+    
+    // -------------------------
+    // FUNCIONES EXTRA
+    // -------------------------
+    function endGame() {
+      gameOver = true;
+      document.getElementById('game-over').style.display = 'block';
+      document.getElementById('final-score').textContent = `Puntuación: ${score}`;
+    }
+    
+    // Evento para actualizar posición del ratón
+    canvas.addEventListener('mousemove', (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+    
+    // Ajustar canvas al cambiar el tamaño de la ventana (responsive)
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+    
+    // -------------------------
+    // INICIALIZACIÓN DEL JUEGO
+    // -------------------------
+    function init() {
+      generateOperation();
+      spawnFoods();
+      spawnBots();
+      score = 0;
+      document.getElementById('score-display').textContent = `Puntuación: 0`;
+      gameLoop();
+    }
+    
+    // Iniciar el juego
+    init();
+  </script>
+</body>
+</html>
